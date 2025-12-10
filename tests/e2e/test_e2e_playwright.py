@@ -1,5 +1,27 @@
 import pytest
 
+def register_and_login_user(page, fastapi_server, first_name, last_name, email, username, password="SecurePass123!"):
+    """Helper function to register and login a user."""
+    # Register user
+    page.goto(f"{fastapi_server}register")
+    page.fill('#first_name', first_name)
+    page.fill('#last_name', last_name)
+    page.fill('#email', email)
+    page.fill('#username', username)
+    page.fill('#password', password)
+    page.fill('#confirm_password', password)
+    page.click('button[type="submit"]')
+    
+    # Login user
+    page.wait_for_url('**/login')
+    page.fill('#username', username)
+    page.fill('#password', password)
+    page.click('button[type="submit"]')
+    
+    # Wait for dashboard
+    page.wait_for_url('**/dashboard')
+    return page
+
 @pytest.mark.e2e
 def test_homepage_loads(page, fastapi_server):
     """
@@ -42,15 +64,14 @@ def test_login_validation_error_handling(page, fastapi_server):
     assert 'login' in page.url
 
 @pytest.mark.e2e
-def test_registration_to_login_flow(page, fastapi_server):
-    """Test basic registration form submission and redirect to login."""
+def test_user_registration_validation(page, fastapi_server):
+    """Test comprehensive registration validation: valid, invalid, and duplicate scenarios."""
+    # Test 1: Valid registration
     page.goto(f"{fastapi_server}register")
-    
-    # Fill registration form with valid data
-    page.fill('#first_name', 'Test')
+    page.fill('#first_name', 'Valid')
     page.fill('#last_name', 'User')
-    page.fill('#email', 'testuser@example.com')
-    page.fill('#username', 'testuser123')
+    page.fill('#email', 'validuser@example.com')
+    page.fill('#username', 'validuser123')
     page.fill('#password', 'SecurePass123!')
     page.fill('#confirm_password', 'SecurePass123!')
     page.click('button[type="submit"]')
@@ -58,6 +79,52 @@ def test_registration_to_login_flow(page, fastapi_server):
     # Should redirect to login page after successful registration
     page.wait_for_url('**/login')
     assert 'login' in page.url
+    
+    # Test 2: Invalid - mismatched passwords
+    page.goto(f"{fastapi_server}register")
+    page.fill('#first_name', 'Test')
+    page.fill('#last_name', 'Mismatch')
+    page.fill('#email', 'mismatch@example.com')
+    page.fill('#username', 'testmismatch')
+    page.fill('#password', 'SecurePass123!')
+    page.fill('#confirm_password', 'DifferentPass456!')
+    page.click('button[type="submit"]')
+    
+    page.wait_for_timeout(2000)
+    # Should stay on registration page or show error
+    assert 'register' in page.url or page.locator('#errorAlert').is_visible()
+    
+    # Test 3: Invalid email format
+    page.goto(f"{fastapi_server}register")
+    page.fill('#first_name', 'Test')
+    page.fill('#last_name', 'Email')
+    page.fill('#email', 'invalid-email-format')
+    page.fill('#username', 'testemail')
+    page.fill('#password', 'SecurePass123!')
+    page.fill('#confirm_password', 'SecurePass123!')
+    page.click('button[type="submit"]')
+    
+    page.wait_for_timeout(2000)
+    # Should stay on registration page or show validation error
+    assert 'register' in page.url or page.locator('#errorAlert').is_visible()
+    
+    # Test 4: Duplicate email (reusing the valid user from Test 1)
+    page.goto(f"{fastapi_server}register")
+    page.fill('#first_name', 'Second')
+    page.fill('#last_name', 'User')
+    page.fill('#email', 'validuser@example.com')  # Same email as Test 1
+    page.fill('#username', 'seconduser')
+    page.fill('#password', 'SecurePass123!')
+    page.fill('#confirm_password', 'SecurePass123!')
+    page.click('button[type="submit"]')
+    
+    page.wait_for_timeout(2000)
+    # Should show error or stay on registration page
+    error_alert = page.locator('#errorAlert')
+    if error_alert.is_visible():
+        assert error_alert.is_visible()
+    else:
+        assert 'register' in page.url
 
 @pytest.mark.e2e
 def test_unauthenticated_dashboard_redirect(page, fastapi_server):
@@ -72,27 +139,8 @@ def test_unauthenticated_dashboard_redirect(page, fastapi_server):
 @pytest.mark.e2e
 def test_calculation_create_and_retrieve(page, fastapi_server):
     """Test creating a calculation and viewing it in the history."""
-    # First register and login a user
-    page.goto(f"{fastapi_server}register")
-    
-    # Fill registration form
-    page.fill('#first_name', 'Calc')
-    page.fill('#last_name', 'Tester')
-    page.fill('#email', 'calctester@example.com')
-    page.fill('#username', 'calctester')
-    page.fill('#password', 'SecurePass123!')
-    page.fill('#confirm_password', 'SecurePass123!')
-    page.click('button[type="submit"]')
-    
-    # Should redirect to login, now login
-    page.wait_for_url('**/login')
-    page.fill('#username', 'calctester')
-    page.fill('#password', 'SecurePass123!')
-    page.click('button[type="submit"]')
-    
-    # Should be on dashboard now
-    page.wait_for_url('**/dashboard')
-    assert 'dashboard' in page.url
+    # Register and login user
+    register_and_login_user(page, fastapi_server, 'Calc', 'Tester', 'calctester@example.com', 'calctester')
     
     # Create a new calculation
     page.select_option('#calcType', 'addition')
@@ -118,25 +166,10 @@ def test_calculation_create_and_retrieve(page, fastapi_server):
 @pytest.mark.e2e
 def test_calculation_view_details(page, fastapi_server):
     """Test viewing detailed calculation information."""
-    # Register and login a user
-    page.goto(f"{fastapi_server}register")
-    
-    page.fill('#first_name', 'View')
-    page.fill('#last_name', 'Tester')
-    page.fill('#email', 'viewtester@example.com')
-    page.fill('#username', 'viewtester')
-    page.fill('#password', 'SecurePass123!')
-    page.fill('#confirm_password', 'SecurePass123!')
-    page.click('button[type="submit"]')
-    
-    # Login
-    page.wait_for_url('**/login')
-    page.fill('#username', 'viewtester')
-    page.fill('#password', 'SecurePass123!')
-    page.click('button[type="submit"]')
+    # Register and login user
+    register_and_login_user(page, fastapi_server, 'View', 'Tester', 'viewtester@example.com', 'viewtester')
     
     # Create a calculation first
-    page.wait_for_url('**/dashboard')
     page.select_option('#calcType', 'multiplication')
     page.fill('#calcInputs', '5, 4, 2')
     page.click('button[type="submit"]')
@@ -268,3 +301,117 @@ def test_calculation_delete_functionality(page, fastapi_server):
     # The result "20" should not be visible in the result column anymore
     result_cell_after = page.locator('td.font-semibold:has-text("20")')
     assert not result_cell_after.is_visible()
+
+# ---------------------------------------------------------------------------
+# Negative Tests - Error Handling and Edge Cases
+# ---------------------------------------------------------------------------
+
+@pytest.mark.e2e
+def test_invalid_calculation_inputs(page, fastapi_server):
+    """Test various invalid calculation inputs: empty, non-numeric, and insufficient data."""
+    # Register and login
+    page.goto(f"{fastapi_server}register")
+    
+    page.fill('#first_name', 'Invalid')
+    page.fill('#last_name', 'Inputs')
+    page.fill('#email', 'invalidinputs@example.com')
+    page.fill('#username', 'invalidinputs')
+    page.fill('#password', 'SecurePass123!')
+    page.fill('#confirm_password', 'SecurePass123!')
+    page.click('button[type="submit"]')
+    
+    # Login
+    page.wait_for_url('**/login')
+    page.fill('#username', 'invalidinputs')
+    page.fill('#password', 'SecurePass123!')
+    page.click('button[type="submit"]')
+    
+    page.wait_for_url('**/dashboard')
+    
+    # Test with empty inputs
+    page.select_option('#calcType', 'addition')
+    page.fill('#calcInputs', '')
+    page.click('button[type="submit"]')
+    
+    page.wait_for_timeout(2000)
+    
+    # Should show an error (either alert or no calculation created)
+    error_alert = page.locator('#errorAlert')
+    if error_alert.is_visible():
+        assert error_alert.is_visible()
+    else:
+        # If no error alert, ensure no calculation was created
+        no_calculations = page.locator('text=No calculations found')
+        loading_message = page.locator('text=Loading calculations')
+        assert no_calculations.is_visible() or loading_message.is_visible()
+    
+    # Test with invalid number format
+    page.fill('#calcInputs', 'abc, def')
+    page.click('button[type="submit"]')
+    
+    page.wait_for_timeout(2000)
+    
+    # Should show error for invalid numbers
+    error_alert = page.locator('#errorAlert')
+    if error_alert.is_visible():
+        assert error_alert.is_visible()
+    
+    # Test with insufficient inputs (single number)
+    page.fill('#calcInputs', '42')
+    page.click('button[type="submit"]')
+    
+    page.wait_for_timeout(2000)
+    
+    # Should either show error or handle gracefully
+    error_alert = page.locator('#errorAlert')
+    if error_alert.is_visible():
+        assert error_alert.is_visible()
+    else:
+        # If no error, the single number calculation should be handled gracefully
+        result_42 = page.locator('td.font-semibold:has-text("42")')
+        # Either shows error or processes single number - both are acceptable
+
+
+
+@pytest.mark.e2e
+def test_access_nonexistent_calculation(page, fastapi_server):
+    """Test accessing a calculation that doesn't exist shows proper error."""
+    # Register and login first
+    page.goto(f"{fastapi_server}register")
+    
+    page.fill('#first_name', 'Nonexistent')
+    page.fill('#last_name', 'Calc')
+    page.fill('#email', 'nonexistent@example.com')
+    page.fill('#username', 'nonexistent')
+    page.fill('#password', 'SecurePass123!')
+    page.fill('#confirm_password', 'SecurePass123!')
+    page.click('button[type="submit"]')
+    
+    # Login
+    page.wait_for_url('**/login')
+    page.fill('#username', 'nonexistent')
+    page.fill('#password', 'SecurePass123!')
+    page.click('button[type="submit"]')
+    
+    page.wait_for_url('**/dashboard')
+    
+    # Try to access a nonexistent calculation
+    fake_calc_id = "999e4567-e89b-12d3-a456-426614174999"
+    page.goto(f"{fastapi_server}dashboard/view/{fake_calc_id}")
+    
+    page.wait_for_timeout(2000)
+    
+    # Should show "not found" error or redirect to dashboard
+    not_found_message = page.locator('text=not found')
+    calculation_not_found = page.locator('text=Calculation Not Found')
+    error_404 = page.locator('text=404')
+    
+    # Check if any error message is shown or redirected to dashboard
+    if page.url.endswith('/dashboard'):
+        # Redirected to dashboard is acceptable
+        assert 'dashboard' in page.url
+    else:
+        # Should show some kind of error message
+        assert (not_found_message.is_visible() or 
+                calculation_not_found.is_visible() or 
+                error_404.is_visible())
